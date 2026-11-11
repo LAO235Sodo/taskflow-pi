@@ -43,9 +43,12 @@ export function detectHost(env = (typeof process !== 'undefined' ? process.env :
   if (exists(homeJoin('.claude'))) return 'claude';
   return 'none';
 }
-// 技能加载埋点文件：omp 侧守门 T 模块写 jsonl；其余宿主 null=不写埋点（报表口径如实声明）。
+// 技能加载埋点文件：omp/pi 侧守门 T 模块写 jsonl（pi 分支 v3.6.0：pi 适配器认 /skills/<名>/ 路径形态，
+// 计数落 ~/.pi/agent/skill-usage.jsonl）；其余宿主 null=不写埋点（报表口径如实声明）。
 export function usagePath(host) {
-  return host === 'omp' ? homeJoin('.omp', 'agent', 'skill-usage.jsonl') : null;
+  return host === 'omp' ? homeJoin('.omp', 'agent', 'skill-usage.jsonl')
+    : host === 'pi' ? homeJoin('.pi', 'agent', 'skill-usage.jsonl')
+    : null;
 }
 // 计划交接文档扫描目录（ls 游离工作源）：omp 独有；其余 []。
 export function planScanDirs(host) {

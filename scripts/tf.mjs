@@ -1489,7 +1489,7 @@ function skillsCmd(args = []) {
         ? `${name}：总 ${e.total}｜近 30 天 ${e.recent}｜项目 ${[...e.projects].sort().join('、')}`
         : `${name}：全文零加载（仅描述常驻）${e.inReg ? '' : '（注册表外）'}`);
     }
-    console.log('\n口径：仅 omp 侧显式 skill:// 加载计数，不含描述常驻效果；Claude Code 侧不在统计内。');
+    console.log('\n口径：omp=显式 skill:// 加载计数 / pi=SKILL.md 路径形态读取计数（v3.6.0），不含描述常驻效果；Claude Code 侧不在统计内。');
     return 0;
   }
   const dirs = (process.env.TF_SKILL_DIRS

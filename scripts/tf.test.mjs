@@ -3988,6 +3988,142 @@ try {
   }
 
 
+  // ---- v3.6.0 pi 宿主适配器机制补全（K/B2/F/E/I/T/class-sweep/警告档确认框）——
+  // 源 .ts 零 TS 语法，拷 .mjs 直导（node 全版本稳）；mock pi + handlers 模式同 omp 守卫节 ----
+  {
+    const repoRootPi = path.resolve(import.meta.dirname, '..');
+    const piMjs = path.join(tmp, 'taskflow-pi-under-test.mjs');
+    fs.writeFileSync(piMjs, fs.readFileSync(path.join(repoRootPi, 'packs', 'host-adapters', 'pi', 'taskflow.ts'), 'utf8'));
+    const piMod = await import('file://' + piMjs);
+    const pj = path.join(tmp, 'pi-guard-proj');
+    fs.mkdirSync(path.join(pj, '.taskflow', 'pg-task-20260101', 'subtasks', '1'), { recursive: true });
+    fs.mkdirSync(path.join(pj, '.taskflow', 'pg-task-20260101', 'subtasks', '2'), { recursive: true });
+    fs.mkdirSync(path.join(pj, '.taskflow', 'pg-live-20260101'), { recursive: true });
+    fs.mkdirSync(path.join(pj, '.taskflow', 'pg-ver-20260101'), { recursive: true });
+    sh('git init -q -b main && git config user.email t@t && git config user.name t', pj);
+    sh("echo '.taskflow/' >> .git/info/exclude", pj);
+    fs.writeFileSync(path.join(pj, '.taskflow', 'project.json'), J({ key: 'piguard', git: true, mechanisms: { TASKFLOW_GUARD: { adoptedAt: new Date().toISOString(), version: 'test' } }, deploy: { webCommands: ['npm --prefix frontend run build'] } }));
+    fs.writeFileSync(path.join(pj, '.taskflow', 'index.json'), J({ tasks: [
+      { id: 'pg-live-20260101', title: '进行中', status: 'active' },
+      { id: 'pg-ver-20260101', title: '验收中', status: 'verifying' },
+      { id: 'pg-park-20260101', title: '挂起', status: 'parked' },
+    ] }));
+    fs.writeFileSync(path.join(pj, '.taskflow', 'pg-ver-20260101', 'task.json'), J({ id: 'pg-ver-20260101', status: 'verifying', deploy: { deployedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString() } }));
+    fs.writeFileSync(path.join(pj, '.taskflow', 'glossary.md'), '# 项目词表\n\n| 行话 | 大白话 | 锚词 |\n| --- | --- | --- |\n| 签名册 | 部署记录表 | 部署记录表 |\n');
+    fs.writeFileSync(path.join(pj, '.taskflow', 'pg-task-20260101', 'subtasks', '1', 'spec.md'), '## 背景\n真实背景内容。\n\n## 目标\n真实目标。\n\n## 验收\n- [ ] 验收项。\n\n## 涉及文件\n- `src/a.ts`\n\n## 约束与禁止\n- 不碰 b.ts\n');
+    fs.writeFileSync(path.join(pj, '.taskflow', 'pg-task-20260101', 'subtasks', '2', 'spec.md'), '## 背景\n- <待补>\n\n## 目标\n- <待补>\n\n## 验收\n- <待补>\n\n## 涉及文件\n- <待补>\n\n## 约束与禁止\n- <待补>\n');
+    fs.writeFileSync(path.join(pj, '.taskflow', 'pg-live-20260101', 'spec.md'), '## 边界与影响面\n- `src/a.ts`\n\n## 目标\nx\n');
+    fs.mkdirSync(path.join(pj, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(pj, 'src', 'a.ts'), 'a\n');
+    fs.writeFileSync(path.join(pj, 'other-file.ts'), 'x\n');
+    const handlersPi = {};
+    piMod.default({ setLabel() {}, on: (ev, fn) => { (handlersPi[ev] ??= []).push(fn); } });
+    let seqPi = 0; let lastIdPi = '';
+    const mkCtxPi = (ui) => ({ cwd: pj, ui: ui ?? {} });
+    const firePi = async (toolName, input, ui) => {
+      lastIdPi = `tc-${++seqPi}`;
+      let out;
+      for (const h of handlersPi['tool_call'] ?? []) { const r = await h({ toolName, toolCallId: lastIdPi, input }, mkCtxPi(ui)); if (r) out = r; }
+      return out;
+    };
+    const deliverPi = async (id, toolName = 'bash') => {
+      let out;
+      for (const h of handlersPi['tool_result'] ?? []) { const r = await h({ toolCallId: id, toolName, content: [{ type: 'text', text: 'OUT' }] }, mkCtxPi()); if (r) out = r; }
+      return out?.content?.filter((c) => c.text !== 'OUT').map((c) => c.text).join('\n') ?? null;
+    };
+    const callBprPi = async (payload) => { let out; for (const h of handlersPi['before_provider_request'] ?? []) { out = await h({ payload }, mkCtxPi()); } return out ?? payload; }; // handler 返回 payload 本体（原地变更）
+    const sysPi = (r) => (Array.isArray(r?.messages) ? r.messages : Array.isArray(r?.payload?.messages) ? r.payload.messages : []).find((m) => m?.role === 'system')?.content ?? '';
+    // E：映射+输出规范+词表+实况行同块注入
+    const ePi = await callBprPi(BP('BASE'));
+    const sysE = sysPi(ePi);
+    ok(sysE.includes('taskflow:pi-host-mapping') && sysE.includes('[面向用户输出规范（TASKFLOW_GUARD 注入）]') && sysE.includes('签名册=部署记录表'), 'v3.6.0 pi E：映射 marker+输出规范+词表活读同块注入');
+    ok(/taskflow 实况：活 pg-live-20260101；等验收 pg-ver-20260101（部署 \d{2}-\d{2} \d{2}:\d{2}）；挂起 pg-park-20260101/.test(sysE), 'v3.6.0 pi E 实况行：活/等验收（部署短格式）/挂起');
+    // K 验收期：交互确认三态 + off
+    ok(await firePi('bash', { command: 'git push origin main' }, { confirm: async () => true }) === undefined, 'v3.6.0 pi K：确认框放行');
+    const kDeny = await firePi('bash', { command: 'git push origin main' }, { confirm: async () => false });
+    ok(kDeny?.block === true && /验收期提醒/.test(kDeny.reason) && /pg-ver-20260101/.test(kDeny.reason), 'v3.6.0 pi K：确认框取消 → 拦截（点名在档任务）');
+    const kFall = await firePi('bash', { command: 'git merge feature-x' }, {});
+    ok(kFall === undefined, 'v3.6.0 pi K：非交互回退放行不拦');
+    ok(/验收期提醒/.test(await deliverPi(lastIdPi) ?? ''), 'v3.6.0 pi K：非交互回退附注随 tool_result 必达');
+    process.env.TF_VERIFY_WARN = 'off';
+    const kOffId = await firePi('bash', { command: 'git push origin main' }, {});
+    delete process.env.TF_VERIFY_WARN;
+    ok(kOffId === undefined && (await deliverPi(lastIdPi)) === null, 'v3.6.0 pi K：TF_VERIFY_WARN=off 全静默');
+    // B2：web-only 提醒附注
+    const b2 = await firePi('bash', { command: 'node tf.mjs deploy --branch main' }, {});
+    ok(b2 === undefined && /web-only/.test(await deliverPi(lastIdPi) ?? ''), 'v3.6.0 pi B2：deploy 缺 --web-only 且有 webCommands → 附注送达不拦');
+    const b2skip = await firePi('bash', { command: 'node tf.mjs deploy --branch main --web-only' }, {});
+    ok(b2skip === undefined && (await deliverPi(lastIdPi)) === null, 'v3.6.0 pi B2：带 --web-only 不提醒');
+    // A 警告档：确认框三态 + enforce 不受确认影响
+    ok(await firePi('bash', { command: 'rsync -a dist/ h:/opt/app.jar' }, { confirm: async () => true }) === undefined, 'v3.6.0 pi A 警告档：确认放行');
+    ok((await firePi('bash', { command: 'rsync -a dist/ h:/opt/app.jar' }, { confirm: async () => false }))?.block === true, 'v3.6.0 pi A 警告档：确认取消拦截');
+    const aFall = await firePi('bash', { command: 'rsync -a dist/ h:/opt/app.jar' }, {});
+    ok(aFall?.block === true && /无交互确认框/.test(aFall.reason), 'v3.6.0 pi A 非交互回退：拦截+off 指引');
+    process.env.TF_WALL = 'enforce';
+    const aEnf = await firePi('bash', { command: "ssh h 'systemctl restart app'" }, { confirm: async () => true });
+    delete process.env.TF_WALL;
+    ok(aEnf?.block === true, 'v3.6.0 pi A enforce：硬拦不受确认框影响');
+    // G 警告档：声明内放行/越界确认框；J warn 档确认框
+    ok(await firePi('edit', { path: path.join(pj, 'src', 'a.ts'), old_string: 'a', new_string: 'a2' }, {}) === undefined, 'v3.6.0 pi G：声明清单内零干扰');
+    const jBashBlk = await firePi('bash', { command: "sed -i 's/active/parked/' .taskflow/index.json" }, {});
+    ok(jBashBlk?.block === true && /状态翻转墙/.test(jBashBlk.reason), 'v3.6.0 pi J bash 通道：sed 触及档案默认硬拦');
+    const jBashOff = await firePi('bash', { command: "TF_STATUS=off sed -i 's/active/parked/' .taskflow/index.json" }, {});
+    ok(jBashOff === undefined, 'v3.6.0 pi 命令前缀豁免：TF_STATUS=off 前缀宿主自解析放行（活体实证：env 前缀进不了宿主进程）');
+    ok(await firePi('edit', { path: path.join(pj, 'other-file.ts'), old_string: 'x', new_string: 'y' }, { confirm: async () => true }) === undefined, 'v3.6.0 pi G 警告档：越界确认放行');
+    const gDeny = await firePi('edit', { path: path.join(pj, 'other-file.ts'), old_string: 'y', new_string: 'z' }, { confirm: async () => false });
+    ok(gDeny?.block === true && /编辑边界门/.test(gDeny.reason), 'v3.6.0 pi G 警告档：越界确认取消拦截');
+    process.env.TF_STATUS = 'warn';
+    const jWarn = await firePi('edit', { path: path.join(pj, '.taskflow', 'pg-ver-20260101', 'task.json'), old_string: '"status": "verifying"', new_string: '"status": "merged"' }, { confirm: async () => true });
+    delete process.env.TF_STATUS;
+    ok(jWarn === undefined, 'v3.6.0 pi J warn 档：确认放行（不再降级 enforce-only）');
+    // F 派发门：写回/缺文件拦/占位拦/未引用提醒
+    const fIn = { prompt: '按 .taskflow/pg-task-20260101/subtasks/1/spec.md 实施' };
+    ok(await firePi('Agent', fIn) === undefined && fIn.prompt.includes('TASKFLOW_GUARD 派发门') && fIn.prompt.includes('真实背景内容') && fIn.prompt.includes('编排层原始派发词'), 'v3.6.0 pi F：spec 全文机械写回派发 prompt（input 原地改写）');
+    const fMiss = await firePi('Agent', { prompt: '按 .taskflow/pg-task-20260101/subtasks/9/spec.md 实施' });
+    ok(fMiss?.block === true && /spec 不存在/.test(fMiss.reason), 'v3.6.0 pi F：引用 spec 缺失 → 硬拦');
+    const fPh = await firePi('Agent', { prompt: '按 .taskflow/pg-task-20260101/subtasks/2/spec.md 实施' });
+    ok(fPh?.block === true && /仅占位/.test(fPh.reason), 'v3.6.0 pi F：必填节仅占位 → 硬拦');
+    const fRem = await firePi('Agent', { prompt: '调研一下依赖升级方案' });
+    ok(fRem === undefined && /派发门.*提醒|任务说明书/.test(await deliverPi(lastIdPi, 'Agent') ?? ''), 'v3.6.0 pi F：未引用 spec 提醒不拦+附注送达');
+    // class-sweep：子代理结果阻塞特征三问提醒
+    const cs = await handlersPi['tool_result'][0]({ toolCallId: 'cs-1', toolName: 'Agent', content: [{ type: 'text', text: '子代理报告：遇到阻塞无法继续' }] }, mkCtxPi());
+    ok(cs?.content?.some((c) => c.text?.includes('同类排查提醒')), 'v3.6.0 pi class-sweep：子代理结果命中阻塞 → 三问提醒附注');
+    const csSelf = await handlersPi['tool_result'][0]({ toolCallId: 'cs-2', toolName: 'Agent', content: [{ type: 'text', text: 'TASKFLOW_GUARD 同类排查提醒：……阻塞……' }] }, mkCtxPi());
+    ok(csSelf === undefined || !(csSelf.content ?? []).some((c) => c.text?.includes('TASKFLOW_GUARD 同类排查提醒：') && c.text.includes('可能猜错')), 'v3.6.0 pi class-sweep：自家提醒不自我喂养');
+    ok(await handlersPi['tool_result'][0]({ toolCallId: 'cs-3', toolName: 'bash', content: [{ type: 'text', text: '阻塞' }] }, mkCtxPi()) === undefined, 'v3.6.0 pi class-sweep：非子代理工具不触发');
+    // T 埋点：/skills/<名>/ 路径计数（不受采纳闸控）
+    const tFilePi = path.join(tmp, 'pi-skill-usage.jsonl');
+    fs.rmSync(tFilePi, { force: true });
+    process.env.TF_SKILL_USAGE = tFilePi;
+    await firePi('read', { path: '/home/x/.agents/skills/dxtest/SKILL.md' }, {});
+    await firePi('read', { path: '/etc/hosts' }, {});
+    delete process.env.TF_SKILL_USAGE;
+    const tRowsPi = fs.existsSync(tFilePi) ? fs.readFileSync(tFilePi, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+    ok(tRowsPi.length === 1 && tRowsPi[0].skill === 'dxtest' && tRowsPi[0].project === 'pi-guard-proj', 'v3.6.0 pi T 埋点：/skills/<名>/ 路径计数（非技能路径不记，项目名取 cwd basename）');
+    // I 词表反馈：检测去重→逐轮指令→词表改写清零→压缩兜底
+    await callBprPi({ model: 'm', messages: [{ role: 'system', content: 'S' }, { role: 'user', content: '这个报错看不懂' }] });
+    await callBprPi({ model: 'm', messages: [{ role: 'user', content: '这个报错看不懂' }] }); // 同文去重
+    const i2 = await callBprPi({ model: 'm', messages: [{ role: 'user', content: '完全没明白' }] });
+    ok(/还有 2 处「看不懂」类反馈/.test(sysPi(i2)), 'v3.6.0 pi I：强信号计数去重+逐轮沉淀指令注入');
+    await firePi('edit', { path: path.join(pj, '.taskflow', 'glossary.md'), old_string: '| 签名册 | 部署记录表 | 部署记录表 |', new_string: '| 签名册 | 部署记录表（每次上线记一行） | 部署记录表 |' }, {});
+    ok(!/词表反馈待清/.test(sysPi(await callBprPi(BP('BASE')))), 'v3.6.0 pi I：词表改写落盘 → 计数清零停止逐轮催');
+    await callBprPi({ model: 'm', messages: [{ role: 'user', content: '还是没看懂' }] });
+    await handlersPi['session_compact'][0]({}, mkCtxPi());
+    const iCompact = await callBprPi(BP('BASE'));
+    ok(/词表反馈兜底/.test(sysPi(iCompact)) && /接力线索/.test(sysPi(iCompact)), 'v3.6.0 pi I 压缩兜底：未清反馈随压缩后首请求附一行（与 C 接力同块）');
+    ok(!/词表反馈兜底/.test(sysPi(await callBprPi(BP('BASE')))), 'v3.6.0 pi I 压缩兜底：一次性消费不重复');
+    // 采纳闸：登记清 → 门全静默（T 埋点仍工作）
+    const pjObj = JSON.parse(fs.readFileSync(path.join(pj, '.taskflow', 'project.json'), 'utf8'));
+    delete pjObj.mechanisms.TASKFLOW_GUARD;
+    fs.writeFileSync(path.join(pj, '.taskflow', 'project.json'), JSON.stringify(pjObj));
+    ok(await firePi('bash', { command: 'node tf.mjs commit -m x --files a.md b.md' }, {}) === undefined, 'v3.6.0 pi 采纳闸：登记清 → B1 等门全静默');
+    process.env.TF_SKILL_USAGE = tFilePi;
+    await firePi('read', { path: '/home/x/.agents/skills/dxtest/SKILL.md' }, {});
+    delete process.env.TF_SKILL_USAGE;
+    ok(fs.readFileSync(tFilePi, 'utf8').trim().split('\n').length === 2, 'v3.6.0 pi T 埋点：不受采纳闸控（登记清仍计数）');
+    fs.writeFileSync(path.join(pj, '.taskflow', 'project.json'), JSON.stringify({ ...pjObj, mechanisms: { TASKFLOW_GUARD: { adoptedAt: new Date().toISOString(), version: 'test' } } }));
+  }
+
   process.exitCode = failures ? 1 : 0; // 失败≠0：堵住链式调用「grep 匹配到失败文案也算成功」的放行洞
   console.log(failures ? `\n${failures} 项断言失败` : '\n全部通过');
 } finally {
